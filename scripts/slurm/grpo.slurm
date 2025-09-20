@@ -16,10 +16,12 @@ export PYTHONUNBUFFERED=1
 export RAY_memory_usage_threshold=0.98
 export SLURM_GPUS_PER_NODE=4
 
-source ~/.bashrc
 source ~/miniconda3/etc/profile.d/conda.sh
 
 conda activate r1qa
+
+echo "Cleaning up previous default Ray temp directory: /tmp/ray"
+rm -rf /tmp/ray
 
 # Setting for SLURM
 # Getting the node names
