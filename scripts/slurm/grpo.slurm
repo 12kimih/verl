@@ -44,10 +44,15 @@ ip_head=$head_node_ip:$port
 export ip_head
 echo "IP Head: $ip_head"
 
+RAY_TEMP_DIR="/tmp/${USER}_ray_temp/${SLURM_JOB_ID}"
+mkdir -p $RAY_TEMP_DIR
+echo "Using Ray temp dir: $RAY_TEMP_DIR"
+
 echo "Starting HEAD at $head_node"
 srun --nodes=1 --ntasks=1 -w "$head_node" \
     ray start --head --node-ip-address="$head_node_ip" --port=$port \
-    --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" --block &
+    --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" \
+    --temp-dir="$RAY_TEMP_DIR" --block &
 
 worker_num=$((SLURM_JOB_NUM_NODES - 1))
 
@@ -55,7 +60,8 @@ for ((i = 1; i <= worker_num; i++)); do
     node_i=${nodes_array[$i]}
     echo "Starting WORKER $i at $node_i"
     srun --nodes=1 --ntasks=1 -w "$node_i" \
-        ray start --address "$ip_head" --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" --block &
+        ray start --address "$ip_head" --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" \
+        --temp-dir="$RAY_TEMP_DIR" --block &
     sleep 5
 done
 
