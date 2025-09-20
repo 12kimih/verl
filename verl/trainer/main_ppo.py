@@ -61,7 +61,9 @@ def run_ppo(config) -> None:
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
         runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
         runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
-        ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
+        ray_init_kwargs = OmegaConf.create(
+            {**ray_init_kwargs, "runtime_env": runtime_env}
+        )
         print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
 
@@ -75,7 +77,9 @@ def run_ppo(config) -> None:
     ):
         from verl.utils.import_utils import is_nvtx_available
 
-        assert is_nvtx_available(), "nvtx is not available in CUDA platform. Please 'pip3 install nvtx'"
+        assert (
+            is_nvtx_available()
+        ), "nvtx is not available in CUDA platform. Please 'pip3 install nvtx'"
         nsight_options = OmegaConf.to_container(
             config.global_profiler.global_tool_config.nsys.controller_nsight_options
         )
@@ -112,7 +116,10 @@ class TaskRunner:
         from verl.single_controller.ray import RayWorkerGroup
 
         if config.actor_rollout_ref.actor.strategy in {"fsdp", "fsdp2"}:
-            from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker
+            from verl.workers.fsdp_workers import (
+                ActorRolloutRefWorker,
+                AsyncActorRolloutRefWorker,
+            )
 
             actor_rollout_cls = (
                 AsyncActorRolloutRefWorker
@@ -122,7 +129,10 @@ class TaskRunner:
             ray_worker_group_cls = RayWorkerGroup
 
         elif config.actor_rollout_ref.actor.strategy == "megatron":
-            from verl.workers.megatron_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker
+            from verl.workers.megatron_workers import (
+                ActorRolloutRefWorker,
+                AsyncActorRolloutRefWorker,
+            )
 
             actor_rollout_cls = (
                 AsyncActorRolloutRefWorker
@@ -143,7 +153,9 @@ class TaskRunner:
     def add_critic_worker(self, config):
         """Add critic worker to role mapping."""
         if config.critic.strategy in {"fsdp", "fsdp2"}:
-            use_legacy_worker_impl = config.trainer.get("use_legacy_worker_impl", "auto")
+            use_legacy_worker_impl = config.trainer.get(
+                "use_legacy_worker_impl", "auto"
+            )
             if use_legacy_worker_impl in ["auto", "enable"]:
                 from verl.workers.fsdp_workers import CriticWorker
             elif use_legacy_worker_impl == "disable":
@@ -151,7 +163,9 @@ class TaskRunner:
 
                 print("Using new worker implementation")
             else:
-                raise ValueError(f"Invalid use_legacy_worker_impl: {use_legacy_worker_impl}")
+                raise ValueError(
+                    f"Invalid use_legacy_worker_impl: {use_legacy_worker_impl}"
+                )
 
         elif config.critic.strategy == "megatron":
             from verl.workers.megatron_workers import CriticWorker
@@ -174,18 +188,24 @@ class TaskRunner:
         # TODO Here you can use the new registration method to support dynamic registration of roles
         if config.reward_model.enable_resource_pool:
             if config.reward_model.n_gpus_per_node <= 0:
-                raise ValueError("config.reward_model.n_gpus_per_node must be greater than 0")
+                raise ValueError(
+                    "config.reward_model.n_gpus_per_node must be greater than 0"
+                )
             if config.reward_model.nnodes <= 0:
                 raise ValueError("config.reward_model.nnodes must be greater than 0")
 
-            reward_pool = [config.reward_model.n_gpus_per_node] * config.reward_model.nnodes
+            reward_pool = [
+                config.reward_model.n_gpus_per_node
+            ] * config.reward_model.nnodes
             resource_pool_spec["reward_pool"] = reward_pool
 
         self.mapping[Role.ActorRollout] = global_pool_id
         self.mapping[Role.Critic] = global_pool_id
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager
 
-        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=self.mapping)
+        resource_pool_manager = ResourcePoolManager(
+            resource_pool_spec=resource_pool_spec, mapping=self.mapping
+        )
         return resource_pool_manager
 
     def add_reward_model_worker(self, config):
@@ -193,7 +213,9 @@ class TaskRunner:
         from verl.trainer.ppo.ray_trainer import Role
 
         if config.reward_model.enable:
-            use_legacy_worker_impl = config.trainer.get("use_legacy_worker_impl", "auto")
+            use_legacy_worker_impl = config.trainer.get(
+                "use_legacy_worker_impl", "auto"
+            )
             if use_legacy_worker_impl in ["auto", "enable"]:
                 if config.reward_model.strategy in {"fsdp", "fsdp2"}:
                     from verl.workers.fsdp_workers import RewardModelWorker
@@ -206,7 +228,9 @@ class TaskRunner:
 
                 print("Using new worker implementation")
             else:
-                raise ValueError(f"Invalid use_legacy_worker_impl: {use_legacy_worker_impl}")
+                raise ValueError(
+                    f"Invalid use_legacy_worker_impl: {use_legacy_worker_impl}"
+                )
 
             self.role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
             if config.reward_model.enable_resource_pool:
@@ -218,7 +242,10 @@ class TaskRunner:
         """Add reference policy worker if KL loss or KL reward is used."""
         from verl.trainer.ppo.ray_trainer import Role
 
-        if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
+        if (
+            config.algorithm.use_kl_in_reward
+            or config.actor_rollout_ref.actor.use_kl_loss
+        ):
             self.role_worker_mapping[Role.RefPolicy] = ray.remote(ref_policy_cls)
             self.mapping[Role.RefPolicy] = "global_pool"
 
@@ -267,7 +294,8 @@ class TaskRunner:
         # Download the checkpoint from HDFS to the local machine.
         # `use_shm` determines whether to use shared memory, which could lead to faster model loading if turned on
         local_path = copy_to_local(
-            config.actor_rollout_ref.model.path, use_shm=config.actor_rollout_ref.model.get("use_shm", False)
+            config.actor_rollout_ref.model.path,
+            use_shm=config.actor_rollout_ref.model.get("use_shm", False),
         )
 
         # Instantiate the tokenizer and processor.
@@ -276,14 +304,22 @@ class TaskRunner:
         trust_remote_code = config.data.get("trust_remote_code", False)
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
         # Used for multimodal LLM, could be None
-        processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
+        processor = hf_processor(
+            local_path, trust_remote_code=trust_remote_code, use_fast=True
+        )
 
         # Load the reward manager for training and validation.
         reward_fn = load_reward_manager(
-            config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {})
+            config,
+            tokenizer,
+            num_examine=0,
+            **config.reward_model.get("reward_kwargs", {}),
         )
         val_reward_fn = load_reward_manager(
-            config, tokenizer, num_examine=1, **config.reward_model.get("reward_kwargs", {})
+            config,
+            tokenizer,
+            num_examine=1,
+            **config.reward_model.get("reward_kwargs", {}),
         )
 
         resource_pool_manager = self.init_resource_pool_mgr(config)
@@ -291,8 +327,12 @@ class TaskRunner:
         from verl.utils.dataset.rl_dataset import collate_fn
 
         # Create training and validation datasets.
-        train_dataset = create_rl_dataset(config.data.train_files, config.data, tokenizer, processor, is_train=True)
-        val_dataset = create_rl_dataset(config.data.val_files, config.data, tokenizer, processor, is_train=False)
+        train_dataset = create_rl_dataset(
+            config.data.train_files, config.data, tokenizer, processor, is_train=True
+        )
+        val_dataset = create_rl_dataset(
+            config.data.val_files, config.data, tokenizer, processor, is_train=False
+        )
         train_sampler = create_rl_sampler(config.data, train_dataset)
 
         # Initialize the PPO trainer.
@@ -331,37 +371,61 @@ def create_rl_dataset(data_paths, data_config, tokenizer, processor, is_train=Tr
     from torch.utils.data import Dataset
 
     from verl.utils.dataset.rl_dataset import RLHFDataset
+    from verl.utils.dataset.musique import MuSiQueDataset
 
     # Check if a custom dataset class is specified in the data configuration
     # and if the path to the custom class is provided
-    if "custom_cls" in data_config and data_config.custom_cls.get("path", None) is not None:
-        # Dynamically load the custom dataset class
-        dataset_cls = load_extern_type(data_config.custom_cls.path, data_config.custom_cls.name)
-        # Verify that the custom dataset class inherits from torch.utils.data.Dataset
-        if not issubclass(dataset_cls, Dataset):
-            raise TypeError(
-                f"The custom dataset class '{data_config.custom_cls.name}' from "
-                f"'{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset"
-            )
-    elif "datagen" in data_config and data_config.datagen.get("path", None) is not None and is_train:
-        # If a data generation strategy is specified, use the DynamicGenDataset class
-        from verl.utils.dataset.dynamicgen_dataset import DynamicGenDataset
+    if "musique" in data_paths.lower():
+        print(data_paths)
+        dataset_cls = MuSiQueDataset
 
-        dataset_cls = DynamicGenDataset
-        print("Using DynamicGenDataset for data generation.")
-
+        print(f"Using dataset class: {dataset_cls.__name__}")
+        # Instantiate the dataset using the determined dataset class
+        dataset = dataset_cls(
+            data_files=data_paths,
+            tokenizer=tokenizer,
+            processor=processor,
+            config=data_config,
+            is_train=is_train,
+        )
     else:
-        # Use the default RLHFDataset class if no custom class is specified
-        dataset_cls = RLHFDataset
-    print(f"Using dataset class: {dataset_cls.__name__}")
+        if (
+            "custom_cls" in data_config
+            and data_config.custom_cls.get("path", None) is not None
+        ):
+            # Dynamically load the custom dataset class
+            dataset_cls = load_extern_type(
+                data_config.custom_cls.path, data_config.custom_cls.name
+            )
+            # Verify that the custom dataset class inherits from torch.utils.data.Dataset
+            if not issubclass(dataset_cls, Dataset):
+                raise TypeError(
+                    f"The custom dataset class '{data_config.custom_cls.name}' from "
+                    f"'{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset"
+                )
+        elif (
+            "datagen" in data_config
+            and data_config.datagen.get("path", None) is not None
+            and is_train
+        ):
+            # If a data generation strategy is specified, use the DynamicGenDataset class
+            from verl.utils.dataset.dynamicgen_dataset import DynamicGenDataset
 
-    # Instantiate the dataset using the determined dataset class
-    dataset = dataset_cls(
-        data_files=data_paths,
-        tokenizer=tokenizer,
-        processor=processor,
-        config=data_config,
-    )
+            dataset_cls = DynamicGenDataset
+            print("Using DynamicGenDataset for data generation.")
+
+        else:
+            # Use the default RLHFDataset class if no custom class is specified
+            dataset_cls = RLHFDataset
+        print(f"Using dataset class: {dataset_cls.__name__}")
+
+        # Instantiate the dataset using the determined dataset class
+        dataset = dataset_cls(
+            data_files=data_paths,
+            tokenizer=tokenizer,
+            processor=processor,
+            config=data_config,
+        )
 
     return dataset
 
@@ -379,7 +443,10 @@ def create_rl_sampler(data_config, dataset):
     import torch
     from torch.utils.data import RandomSampler, SequentialSampler
 
-    if data_config.sampler is not None and data_config.sampler.get("class_path", None) is not None:
+    if (
+        data_config.sampler is not None
+        and data_config.sampler.get("class_path", None) is not None
+    ):
         curriculum_class = load_extern_type(
             data_config.sampler.class_path,
             data_config.sampler.class_name,
@@ -400,7 +467,9 @@ def create_rl_sampler(data_config, dataset):
     elif data_config.shuffle:
         train_dataloader_generator = torch.Generator()
         train_dataloader_generator.manual_seed(data_config.get("seed", 1))
-        sampler = RandomSampler(data_source=dataset, generator=train_dataloader_generator)
+        sampler = RandomSampler(
+            data_source=dataset, generator=train_dataloader_generator
+        )
     else:
         # If shuffling is disabled, use a sequential sampler to iterate through the dataset in order.
         sampler = SequentialSampler(data_source=dataset)
