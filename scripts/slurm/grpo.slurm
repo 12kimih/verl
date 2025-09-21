@@ -79,8 +79,10 @@ TRAIN_FILE="dgslibisey/MuSiQue"
 VAL_FILE="dgslibisey/MuSiQue"
 ROLLOUT_N=8
 
+unset ROCR_VISIBLE_DEVICES
+
 srun --overlap --nodes=1 --ntasks=1 -w "$head_node" \
-    env -u ROCR_VISIBLE_DEVICES python3 -m verl.trainer.main_ppo \
+    --export=ALL,ROCR_VISIBLE_DEVICES="" python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$TRAIN_FILE \
     data.val_files=$VAL_FILE \
