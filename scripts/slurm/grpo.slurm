@@ -20,9 +20,6 @@ source ~/miniconda3/etc/profile.d/conda.sh
 
 conda activate r1qa
 
-echo "Cleaning up previous default Ray temp directory: /tmp/ray"
-rm -rf /tmp/ray
-
 # Setting for SLURM
 # Getting the node names
 nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
@@ -41,7 +38,7 @@ if [[ "$head_node_ip" == *" "* ]]; then
     echo "IPV6 address detected. We split the IPV4 address as $head_node_ip"
 fi
 
-port=6381
+port=6383
 ip_head=$head_node_ip:$port
 export ip_head
 echo "IP Head: $ip_head"
