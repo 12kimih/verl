@@ -43,6 +43,8 @@ ip_head=$head_node_ip:$port
 export ip_head
 echo "IP Head: $ip_head"
 
+export RAY_ADDRESS="$ip_head"
+
 RAY_TEMP_DIR="/tmp/${USER}_ray_temp/${SLURM_JOB_ID}"
 mkdir -p $RAY_TEMP_DIR
 echo "Using Ray temp dir: $RAY_TEMP_DIR"
