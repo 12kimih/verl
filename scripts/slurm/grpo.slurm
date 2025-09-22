@@ -14,7 +14,6 @@ export NCCL_P2P_DISABLE=1
 
 export PYTHONUNBUFFERED=1
 export RAY_memory_usage_threshold=0.98
-export SLURM_GPUS_PER_NODE=4
 
 source ~/miniconda3/etc/profile.d/conda.sh
 
@@ -40,7 +39,6 @@ fi
 
 port=6383
 ip_head=$head_node_ip:$port
-export ip_head
 echo "IP Head: $ip_head"
 
 export RAY_ADDRESS="$ip_head"
@@ -52,7 +50,7 @@ echo "Using Ray temp dir: $RAY_TEMP_DIR"
 echo "Starting HEAD at $head_node"
 srun --nodes=1 --ntasks=1 -w "$head_node" \
     ray start --head --node-ip-address="$head_node_ip" --port=$port \
-    --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" \
+    --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" \
     --temp-dir="$RAY_TEMP_DIR" --block &
 
 worker_num=$((SLURM_JOB_NUM_NODES - 1))
@@ -61,7 +59,7 @@ for ((i = 1; i <= worker_num; i++)); do
     node_i=${nodes_array[$i]}
     echo "Starting WORKER $i at $node_i"
     srun --nodes=1 --ntasks=1 -w "$node_i" \
-        ray start --address "$ip_head" --num-cpus "${SLURM_CPUS_PER_TASK}" --num-gpus "${SLURM_GPUS_PER_NODE}" \
+        ray start --address "$ip_head" --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" \
         --temp-dir="$RAY_TEMP_DIR" --block &
     sleep 5
 done
@@ -79,10 +77,8 @@ TRAIN_FILE="dgslibisey/MuSiQue"
 VAL_FILE="dgslibisey/MuSiQue"
 ROLLOUT_N=8
 
-unset ROCR_VISIBLE_DEVICES
-
 srun --overlap --nodes=1 --ntasks=1 -w "$head_node" \
-    --export=ALL,ROCR_VISIBLE_DEVICES="" python3 -m verl.trainer.main_ppo \
+    env -u ROCR_VISIBLE_DEVICES python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$TRAIN_FILE \
     data.val_files=$VAL_FILE \
