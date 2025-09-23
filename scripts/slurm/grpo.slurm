@@ -37,7 +37,7 @@ if [[ "$head_node_ip" == *" "* ]]; then
     echo "IPV6 address detected. We split the IPV4 address as $head_node_ip"
 fi
 
-port=6383
+port=$(shuf -i 30000-40000 -n 1)
 ip_head=$head_node_ip:$port
 echo "IP Head: $ip_head"
 
