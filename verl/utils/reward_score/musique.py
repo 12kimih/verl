@@ -61,15 +61,9 @@ def f1_score(prediction: str, references: List[str]) -> float:
     return max_f1
 
 
-# def acc_reward(predict_str: str, references: List[str]) -> float:
-#     prediction = normalize_answer(extract_answer(predict_str))
-#     references = [normalize_answer(ref) for ref in references]
-
-#     return f1_score(prediction, references)
-
-
 def acc_reward(predict_str: str, references: List[str]) -> float:
-    prediction = extract_answer(predict_str)
+    prediction = normalize_answer(extract_answer(predict_str))
+    references = [normalize_answer(ref) for ref in references]
 
     return f1_score(prediction, references)
 

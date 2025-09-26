@@ -9,9 +9,8 @@
 
 set -x -e
 
-export OMP_NUM_THREADS=8
+(( SLURM_GPUS_ON_NODE > 0 )) && export OMP_NUM_THREADS=$((SLURM_CPUS_ON_NODE / SLURM_GPUS_ON_NODE)) || export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export NCCL_P2P_DISABLE=1
-
 export PYTHONUNBUFFERED=1
 export RAY_memory_usage_threshold=0.98
 
@@ -19,14 +18,15 @@ source ~/miniconda3/etc/profile.d/conda.sh
 
 conda activate r1qa
 
-# Setting for SLURM
 # Getting the node names
 nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
-nodes_array=("$nodes")
+nodes_array=($nodes)
 
 head_node=${nodes_array[0]}
 head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
 
+# if we detect a space character in the head node IP, we'll
+# convert it to an ipv4 address. This step is optional.
 if [[ "$head_node_ip" == *" "* ]]; then
     IFS=' ' read -ra ADDR <<<"$head_node_ip"
     if [[ ${#ADDR[0]} -gt 16 ]]; then
@@ -37,51 +37,51 @@ if [[ "$head_node_ip" == *" "* ]]; then
     echo "IPV6 address detected. We split the IPV4 address as $head_node_ip"
 fi
 
-port=$(shuf -i 30000-40000 -n 1)
+port=$(shuf -i 49152-65535 -n 1)
 ip_head=$head_node_ip:$port
+export ip_head
 echo "IP Head: $ip_head"
-
 export RAY_ADDRESS="$ip_head"
 
-RAY_TEMP_DIR="/tmp/${USER}_ray_temp/${SLURM_JOB_ID}"
-mkdir -p $RAY_TEMP_DIR
-echo "Using Ray temp dir: $RAY_TEMP_DIR"
+# Define and create a job-specific temporary directory for Ray
+RAY_TEMP_DIR="/tmp/ray_${USER}/${SLURM_JOB_ID}"
+mkdir -p "$RAY_TEMP_DIR"
 
 echo "Starting HEAD at $head_node"
 srun --nodes=1 --ntasks=1 -w "$head_node" \
     ray start --head --node-ip-address="$head_node_ip" --port=$port \
-    --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" \
-    --temp-dir="$RAY_TEMP_DIR" --block &
+    --temp-dir="$RAY_TEMP_DIR" \
+    --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" --block &
 
+# optional, though may be useful in certain versions of Ray < 1.0.
+sleep 10
+
+# number of nodes other than the head node
 worker_num=$((SLURM_JOB_NUM_NODES - 1))
 
 for ((i = 1; i <= worker_num; i++)); do
     node_i=${nodes_array[$i]}
     echo "Starting WORKER $i at $node_i"
     srun --nodes=1 --ntasks=1 -w "$node_i" \
-        ray start --address "$ip_head" --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" \
-        --temp-dir="$RAY_TEMP_DIR" --block &
+        ray start --address "$ip_head" \
+        --temp-dir="$RAY_TEMP_DIR" \
+        --num-cpus "${SLURM_CPUS_ON_NODE}" --num-gpus "${SLURM_GPUS_ON_NODE}" --block &
     sleep 5
 done
 
-N_GPU=4
-TOTAL_EPOCHES=3
-# GLOBAL_BATCH_SIZE=128
-# ROLLOUT_BATCH_SIZE=384
-# VAL_BATCH_SIZE=512
-
-EXP_NAME="Qwen3-1.7B-SFT-GRPO"
-MODEL_PATH="12kimih/Qwen3-1.7B-R1QA-SFT-M"
-
-TRAIN_FILE="dgslibisey/MuSiQue"
-VAL_FILE="dgslibisey/MuSiQue"
+EXPERIMENT_NAME="Qwen3-1.7B-GRPO"
+MODEL_PATH="Qwen/Qwen3-1.7B"
+TRAIN_FILES="dgslibisey/MuSiQue"
+VAL_FILES="dgslibisey/MuSiQue"
 ROLLOUT_N=8
+TOTAL_EPOCHS=2
 
 srun --overlap --nodes=1 --ntasks=1 -w "$head_node" \
-    env -u ROCR_VISIBLE_DEVICES python3 -m verl.trainer.main_ppo \
+    env -u ROCR_VISIBLE_DEVICES \
+    python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$TRAIN_FILE \
-    data.val_files=$VAL_FILE \
+    data.train_files=$TRAIN_FILES \
+    data.val_files=$VAL_FILES \
     data.train_batch_size=512 \
     data.max_prompt_length=4096 \
     data.max_response_length=2048 \
@@ -112,11 +112,13 @@ srun --overlap --nodes=1 --ntasks=1 -w "$head_node" \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
     trainer.project_name='r1qa' \
-    trainer.experiment_name=$EXP_NAME \
-    trainer.n_gpus_per_node=$N_GPU \
-    trainer.nnodes=1 \
+    trainer.experiment_name=$EXPERIMENT_NAME \
+    trainer.n_gpus_per_node=$SLURM_GPUS_ON_NODE \
+    trainer.nnodes=$SLURM_NNODES \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
     trainer.max_actor_ckpt_to_keep=6 \
-    trainer.total_epochs=$TOTAL_EPOCHES
+    trainer.total_epochs=$TOTAL_EPOCHS
     # actor_rollout_ref.model.use_shm=True \
+
+ray stop
